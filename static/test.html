@@ -14,12 +14,12 @@ $(document).ready(function() {
 
 // show message in div#subscribe
 function showMessage(message) {
+    console.log('message', message);
     var messageElem = $('#subscribe'),
         height = 0,
-        date = new Date();
+        date = new Date(message['t']);
         options = {hour12: false};
-    console.log('message', message);
-    messageElem.append($('<p>').html('[' + date.toLocaleTimeString('en-US', options) + '] ' + message + '\n'));
+    messageElem.append($('<p>').html('[' + date.toLocaleTimeString('en-US', options) + '] ' + message['m'] + '\n'));
     messageElem.find('p').each(function(i, value){
         height += parseInt($(this).height());
     });
@@ -34,7 +34,7 @@ function sendMessage(){
 }
 
 sock.onopen = function(){
-    showMessage('Connection to server started')
+    console.log('Connection to server started')
 }
 
 // send message from form
@@ -51,7 +51,8 @@ $('#message').keyup(function(e){
 
 // income message handler
 sock.onmessage = function(event) {
-  showMessage(event.data);
+  var message = JSON.parse(event.data);
+  showMessage(message);
 };
 
 //$('#signout').click(function(){
@@ -60,14 +61,14 @@ sock.onmessage = function(event) {
 
 sock.onclose = function(event){
     if(event.wasClean){
-        showMessage('Clean connection end')
+        console.log('Clean connection end')
     }else{
-        showMessage('Connection broken')
+        console.log('Connection broken')
     }
 };
 
 sock.onerror = function(error){
-    showMessage(error);
+    console.debug(error);
 }
 
 });

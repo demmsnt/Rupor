@@ -1,3 +1,4 @@
 config = {
-    'redis': 'redis://localhost'
+    'redis': {'url': 'redis://localhost',
+              'channel': 'channel'}
 }
