@@ -1,0 +1,3 @@
+config = {
+    'redis': 'redis://localhost'
+}
