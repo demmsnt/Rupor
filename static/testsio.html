@@ -1,0 +1,271 @@
+<html>
+	<head>
+        <style>
+.chat-window {
+  position: fixed;
+  right: 2px;
+  bottom: 2px;
+  background-color: black;
+  color: white;
+  margin: 3px;
+  padding: 10px;
+  width: 99%;
+}
+
+.chat-controls {
+  float:right;
+}
+.chat-head-title {
+  float:left;
+}
+.chat-messages {
+  clear: both;
+  height: 100px;
+  overflow-y: auto;
+  margin-bottom: 40px;
+  background:gray;
+  padding: 5px;
+}
+
+.chat-inputs
+  { position: fixed;
+    bottom: 2px;
+    left: 0;
+    width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+    text-align: center;
+}
+.chat-inputs-wrapper {
+    position: relative;
+    left: 0px;
+    top: 0px;
+    width: 96%;
+    height: 37px;
+    display: inline-block;
+}
+.chat-input-wrapper {
+    position: absolute;
+    right: 110px;
+    left: 0px;
+    top : 0px;
+    bottom: 0px;
+}
+
+ .chat-inputs-wrapper input {
+    height: 100%;
+    width: 100%;
+    padding: 8px 10px;
+    float: left;   
+    /*color: #1f1f9d;*/
+    border: 0;
+    /*background: #e6e6e6;*/
+    -webkit-box-sizing: border-box; /* Safari/Chrome, other WebKit */
+    -moz-box-sizing: border-box;    /* Firefox, other Gecko */
+    box-sizing: border-box;         /* Opera/IE 8+ */
+}
+
+.chat-inputs-wrapper button {
+    position: absolute;
+    right: 0px;
+    height: 37px;
+    top: 0px;
+    overflow: visible;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    width: 100px;
+    /*color: #ffffff;
+    background: red;*/
+}  
+   
+ 
+.chat-inputs-wrapper button::-moz-focus-inner { /* remove extra button spacing for Mozilla Firefox */
+    border: 0;
+    padding: 0;
+}         
+        </style>
+	</head>
+	<body>
+		<h1>test</h1>
+
+<div class="chat-window">
+  <div class="chat-head">
+    <div class="chat-head-title">Head</div>
+    <div class="chat-controls">[X]</div>
+    <div class="chat-messages">
+    </div>
+  </div>
+  <div class="chat-inputs">
+    <div class="chat-inputs-wrapper">
+    <div class="chat-input-wrapper">
+      <input class="form-control chat-input" placeholder="not connected" disabled="disabled"/>
+    </div>
+    <button style="btn" type="submit" disabled="disabled">Send</button>
+  </div>
+  </div>
+</div>
+<div id="chat_show">Show chat</div>
+<script src="/js/jquery.min.js"></script>
+<script src="https://cdn.socket.io/socket.io-1.2.1.js"></script>
+		<script>
+$(document).ready(function() {
+    function setup_chat() {
+
+        function sendMessage(){
+            let msg_text = $('.chat-window input').val();
+            if (msg_text.length>0) {
+                socket.emit('message', {'t': 'msg', 'msg': msg_text});
+                $('.chat-window input').val('');
+            }
+        }
+
+        function showMessage(msg) {
+            console.log('show message', msg);
+            let text = msg.msg;
+            $('<div class="chat-message">'+text+'</div>').appendTo('.chat-messages');
+        }
+        let socket = io.connect('http://localhost');
+        socket.on('connect', function () {
+            console.log('connect');
+            $('.chat-window input').prop('disabled', false);
+            $('.chat-window button').prop('disabled', false);
+            $('.chat-window input').attr('placeholder', '');
+            //socket.emit('message', {'a': 'Hello worl'});
+        });
+        socket.on('disconnect', function () {
+            console.log('disconnect');
+            $('.chat-window input').prop('disabled', true);
+            $('.chat-window button').prop('disabled', true);
+            $('.chat-window input').attr('placeholder', 'not connected');
+        });
+        socket.on('message', function (data) {
+            console.log('message', data);
+            if (data.t == 'msg') {
+                showMessage(data);
+            }
+            if (data.t == 'history') {
+                for( let msg of data.d) {
+                    showMessage(msg);
+                }
+            }
+        });
+
+        $('.chat-window input').keyup(function(e){if(e.keyCode == 13){sendMessage();}});
+        $('.chat-window button').click(sendMessage);
+    }
+    setup_chat();
+    // function ChatClient(url, display_el, input, button, options) {
+    //         this.options = options || {};
+    //         this.reconnect = options.reconnect !==undefined ? options.reconnect : false;
+    //         this.max_length = options.max_length !==undefined ? options.max_length : 10;
+    //         this.debug = options.debug != undefined ;
+    //         this.sock = undefined;
+    //         this.connected = false;
+    //         this.timerId = undefined;
+    //         this.ids = {};
+    //         this.showMessage = function (message) {
+    //             if (that.ids[message.id]) {
+    //                 //Уже есть TODO удаление старых
+    //                 return
+    //             }
+    //             let elems = $(display_el+' p');
+
+    //             if (this.max_length && elems.length >= this.max_length ) {
+    //                 console.log('!!', elems.length, this.max_length);
+    //                 //почистим
+    //                 let arr = [];
+    //                 for (let i=0; i< (elems.length + 1)  - this.max_length; i++) {
+    //                     arr.push($(elems[i]));
+    //                 }
+    //                 for (let i=0; i< arr.length; i++) {
+    //                     arr[i].remove();
+    //                 }
+    //             }
+    //             that.ids[message.id] = message.t;
+    //             if (this.debug) {console.log('message', message);}
+    //             let messageElem = $(display_el),
+    //                 height = 0,
+    //                 date = new Date(message['t']);
+    //                 options = {hour12: false};
+    //                 messageElem.append($('<p>').html('[' + date.toLocaleTimeString('en-US', options) + '] ' + message['m'] + '\n'));
+    //                 messageElem.find('p').each(function(i, value){height += parseInt($(this).height()) + 5;});
+    //                 messageElem.animate({scrollTop: height});
+    //             }
+    //         this.reconnect_func = function () {
+    //                         console.log('reconnection');
+    //                         if (that.timerId) { clearTimeout(that.timerId); that.timerId = undefined;}
+    //                         if (that.connected == false && that.reconnect ){that.connect();}}
+
+    //         this.connect = function () {
+    //             if (this.debug) {console.log('Connect');}
+    //             let that = this;
+    //             if (that.reconnect) {
+    //                     //Если сокет сломается - то всеравно полезет
+    //                     that.timerId = setTimeout(that.reconnect_func, that.reconnect);
+    //                 }
+    //             this.sock = new WebSocket(url);
+    //             this.sock.onopen = function(){ if (that.debug) {
+    //                 that.connected = true;
+    //                 that.sock.onmessage = function(event) {
+    //                     var data = JSON.parse(event.data);
+    //                     if (Array.isArray(data)) {
+    //                         for (let i=0; i< data.length; i++) {
+    //                             that.showMessage(data[i]);
+    //                         }
+    //                     } else {
+    //                         that.showMessage(data);
+    //                     }
+    //                 };
+    //                 }
+    //             that.sock.onclose = function(event){
+    //                 that.connected = false;
+    //                 if(event.wasClean){
+    //                      if (that.debug) {console.log('Clean connection end');}
+    //                 }else{
+    //                      if (that.debug) {console.log('Connection broken');}
+    //                 }
+    //                 if (that.reconnect) {
+    //                     if (that.debug) {console.log('Reconnect after', that.reconnect, 'seconds');}
+    //                     that.timerId = setTimeout(that.reconnect_func, that.reconnect);
+    //                 }
+    //             };
+    //             that.sock.onerror = function(error){
+    //                 this.connected == false;
+    //                 if (that.debug) {console.debug(error);}
+    //             }
+
+    //             }
+    //         }
+
+    //         this.sendMessage = function (){
+    //                 let msg = $(input);
+    //                 this.sock.send(msg.val());
+    //                 msg.val('').focus();
+    //         }
+    //         let that = this;
+    //         function set_input_handlers() {
+    //                 $(button).click(that.sendMessage);
+    //                 $(input).keyup(function(e){if(e.keyCode == 13){that.sendMessage();}});
+    //         }
+    //         this.connect();
+    //         set_input_handlers();
+    //         $('#chat_hide').on('click', function(){
+    //             $('#chat_window').css({display: 'none'});
+    //             $('#chat_show').css({display: 'block'});
+    //         });
+    //         $('#chat_show').on('click', function(){
+    //             $('#chat_window').css({display: 'block'});
+    //             $('#chat_show').css({display: 'none'});
+    //         });
+    //     }
+    // let chat = new ChatClient(
+    //     'ws://' + window.location.host + '/ws',
+    //     '#chat_display',
+    //     '#chat_input',
+    //     '#chat_submit',
+    //     {debug: true, reconnect: 500, max_length: 4});
+});
+		</script>
+	</body>
+</html>

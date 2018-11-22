@@ -1,76 +1,188 @@
 <html>
 	<head>
+        <style>
+        #chat_window {
+            position: fixed;
+            left:0px;
+            bottom:0px;
+            right:0px;
+            height: 200px;
+            background-color: black;
+            color: green;
+        }
+        #chat_head{
+            position: relative;
+            height: 15px;
+            color: white;
+            padding: 5px;
+        }
+        #chat_hide {
+            float:right;
+            cursor:pointer;
+        }
+        #chat_display {
+            position: fixed;
+            height: 125px;
+            bottom:30px;
+            left:0px;
+            right:0px;
+            overflow-y: auto;
+            padding: 10px;
+        }
+        #chat_controls {
+            position: fixed;
+            bottom:0px;
+            left:0px;
+            right:0px;
+            height: 25px;
+            padding: 5px;
+        }
+        #chat_controls > table {width:100%;}
+        #chat_controls  input {width:100%;}
+        #chat_submit_td {width:30px;}
+        #chat_show {
+            position: fixed;
+            right:3px;
+            bottom:3px;
+            padding: 3px;
+            background-color: black;
+            color: white;
+            cursor: pointer;
+            display: none;
+        }
+        </style>
 	</head>
 	<body>
 		<h1>test</h1>
-<div id="subscribe"></div>
-<input id="message" />
-<button id="submit">Send</button>
+<div id="chat_window">
+    <div id="chat_head">Chat<div id="chat_hide">[-]</div></div>
+    <div id="chat_display"></div>
+    <div id="chat_controls">
+        <table>
+            <tr>
+                <td>
+                <input id="chat_input" />
+                </td>
+                <td id="chat_submit_td">
+                <button id="chat_submit">Send</button>
+                </td>
+        </table>
+    </div>
+</div>
+<div id="chat_show">Show chat</div>
 <script src="/js/jquery.min.js"></script>
 		<script>
 $(document).ready(function() {
+    function ChatClient(url, display_el, input, button, options) {
+            this.options = options || {};
+            this.reconnect = options.reconnect !==undefined ? options.reconnect : false;
+            this.max_length = options.max_length !==undefined ? options.max_length : 10;
+            this.debug = options.debug != undefined ;
+            this.sock = undefined;
+            this.connected = false;
+            this.timerId = undefined;
+            this.ids = {};
+            this.showMessage = function (message) {
+                if (that.ids[message.id]) {
+                    //Уже есть TODO удаление старых
+                    return
+                }
+                let elems = $(display_el+' p');
 
-    var sock = new WebSocket('ws://' + window.location.host + '/ws');
+                if (this.max_length && elems.length >= this.max_length ) {
+                    console.log('!!', elems.length, this.max_length);
+                    //почистим
+                    let arr = [];
+                    for (let i=0; i< (elems.length + 1)  - this.max_length; i++) {
+                        arr.push($(elems[i]));
+                    }
+                    for (let i=0; i< arr.length; i++) {
+                        arr[i].remove();
+                    }
+                }
+                that.ids[message.id] = message.t;
+                if (this.debug) {console.log('message', message);}
+                let messageElem = $(display_el),
+                    height = 0,
+                    date = new Date(message['t']);
+                    options = {hour12: false};
+                    messageElem.append($('<p>').html('[' + date.toLocaleTimeString('en-US', options) + '] ' + message['m'] + '\n'));
+                    messageElem.find('p').each(function(i, value){height += parseInt($(this).height()) + 5;});
+                    messageElem.animate({scrollTop: height});
+                }
+            this.reconnect_func = function () {
+                            console.log('reconnection');
+                            if (that.timerId) { clearTimeout(that.timerId); that.timerId = undefined;}
+                            if (that.connected == false && that.reconnect ){that.connect();}}
 
-// show message in div#subscribe
-function showMessage(message) {
-    console.log('message', message);
-    var messageElem = $('#subscribe'),
-        height = 0,
-        date = new Date(message['t']);
-        options = {hour12: false};
-    messageElem.append($('<p>').html('[' + date.toLocaleTimeString('en-US', options) + '] ' + message['m'] + '\n'));
-    messageElem.find('p').each(function(i, value){
-        height += parseInt($(this).height());
-    });
+            this.connect = function () {
+                if (this.debug) {console.log('Connect');}
+                let that = this;
+                if (that.reconnect) {
+                        //Если сокет сломается - то всеравно полезет
+                        that.timerId = setTimeout(that.reconnect_func, that.reconnect);
+                    }
+                this.sock = new WebSocket(url);
+                this.sock.onopen = function(){ if (that.debug) {
+                    that.connected = true;
+                    that.sock.onmessage = function(event) {
+                        var data = JSON.parse(event.data);
+                        if (Array.isArray(data)) {
+                            for (let i=0; i< data.length; i++) {
+                                that.showMessage(data[i]);
+                            }
+                        } else {
+                            that.showMessage(data);
+                        }
+                    };
+                    }
+                that.sock.onclose = function(event){
+                    that.connected = false;
+                    if(event.wasClean){
+                         if (that.debug) {console.log('Clean connection end');}
+                    }else{
+                         if (that.debug) {console.log('Connection broken');}
+                    }
+                    if (that.reconnect) {
+                        if (that.debug) {console.log('Reconnect after', that.reconnect, 'seconds');}
+                        that.timerId = setTimeout(that.reconnect_func, that.reconnect);
+                    }
+                };
+                that.sock.onerror = function(error){
+                    this.connected == false;
+                    if (that.debug) {console.debug(error);}
+                }
 
-    messageElem.animate({scrollTop: height});
-}
+                }
+            }
 
-function sendMessage(){
-    var msg = $('#message');
-    sock.send(msg.val());
-    msg.val('').focus();
-}
-
-sock.onopen = function(){
-    console.log('Connection to server started')
-}
-
-// send message from form
-$('#submit').click(function() {
-	console.log('send');
-    sendMessage();
-});
-
-$('#message').keyup(function(e){
-    if(e.keyCode == 13){
-        sendMessage();
-    }
-});
-
-// income message handler
-sock.onmessage = function(event) {
-  var message = JSON.parse(event.data);
-  showMessage(message);
-};
-
-//$('#signout').click(function(){
-//    window.location.href = "signout"
-//});
-
-sock.onclose = function(event){
-    if(event.wasClean){
-        console.log('Clean connection end')
-    }else{
-        console.log('Connection broken')
-    }
-};
-
-sock.onerror = function(error){
-    console.debug(error);
-}
-
+            this.sendMessage = function (){
+                    let msg = $(input);
+                    this.sock.send(msg.val());
+                    msg.val('').focus();
+            }
+            let that = this;
+            function set_input_handlers() {
+                    $(button).click(that.sendMessage);
+                    $(input).keyup(function(e){if(e.keyCode == 13){that.sendMessage();}});
+            }
+            this.connect();
+            set_input_handlers();
+            $('#chat_hide').on('click', function(){
+                $('#chat_window').css({display: 'none'});
+                $('#chat_show').css({display: 'block'});
+            });
+            $('#chat_show').on('click', function(){
+                $('#chat_window').css({display: 'block'});
+                $('#chat_show').css({display: 'none'});
+            });
+        }
+    let chat = new ChatClient(
+        'ws://' + window.location.host + '/ws',
+        '#chat_display',
+        '#chat_input',
+        '#chat_submit',
+        {debug: true, reconnect: 500, max_length: 4});
 });
 		</script>
 	</body>

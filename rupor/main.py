@@ -2,12 +2,13 @@
 
 В nginx конфиг выглядит так
 
-location /ws {
-                        proxy_pass http://localhost:8080;
-                        proxy_http_version 1.1;
-                        proxy_set_header Upgrade $http_upgrade;
-                        proxy_set_header Connection "upgrade";
-        }
+location /socket.io/ {
+            proxy_pass http://localhost:8080;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+    }
+
 """
 import logging
 import datetime
@@ -16,6 +17,7 @@ import asyncio
 import aiohttp
 from aiohttp import web
 import aioredis
+import socketio
 from services import config, users
 
 logger = logging.getLogger(__file__)
@@ -41,7 +43,13 @@ class RuporApp(web.Application):
         self.pub = None
         self.sub = None
         self.clients = {}
-        routes = [web.get('/ws', self.ws_handler)]
+        #routes = [web.get('/ws', self.ws_handler)]
+        routes = []
+        self.sio = socketio.AsyncServer()
+        self.sio.attach(self)
+        self.sio.on('connect', handler=self.on_connect)
+        self.sio.on('message', handler=self.on_message)
+        self.sio.on('disconnect', handler=self.on_disconnect)
         if debug:
             routes.append(web.get('/status', self.status))
         self.add_routes(routes)
@@ -80,55 +88,78 @@ class RuporApp(web.Application):
         await self.pub.wait_closed()
         await self.sub.wait_closed()
 
-    async def ws_handler(self, request):
-        """Вебсокет хандлер"""
-        ws = web.WebSocketResponse()
-        i_am = uuid4().hex
+    async def on_connect(self, sid, env):
+        request = env['aiohttp.request']
         user = self.users.get_user(request)
-        logger.info('{} Enter'.format(i_am))
-        self.clients[i_am] = ws
-        try:
-            await ws.prepare(request)
-        except Exception as e:
-            raise e
-        for msg in self.history:
-            await ws.send_json(msg)
-        async for msg in ws:
-            if msg.type == aiohttp.WSMsgType.TEXT:
-                if self.channel:
-                    send_msg = {
-                        't': datetime.datetime.utcnow().isoformat(),
-                        'm': msg.data,
-                        'u': user
-                    }
-                    await self.pub.publish_json(self.config['redis']['channel'], send_msg)
-            elif msg.type == aiohttp.WSMsgType.ERROR:
-                logger.error('ws connection closed with exception %s' % ws.exception())
-        logger.info('{} Exit'.format(i_am))
-        del(self.clients[i_am])
-        return ws
+        self.clients[sid] = user
+        logger.info('Connected sid:{}, user:{}'.format(sid, str(user)))
+        await self.sio.emit('message', data={'t': 'history', 'd': self.history}, room=sid)
+        await self.pub.publish_json(self.config['redis']['channel'], {'t': 'info', 'data': 'User {} joined'.format(str(user))})
+
+    async def on_message(self, sid, data):
+        print("Message", sid, data)
+        if data.get('t') == 'msg':
+            user = self.clients.get(sid)
+            data['user'] = user
+            await self.pub.publish_json(self.config['redis']['channel'], data)
+
+    def on_disconnect(self, sid):
+        user = self.clients.get(sid)
+        if sid in self.clients:
+            del(self.clients[sid])
+        logger.info("Disconnected sid:{}, user:{}".format(sid, str(user)))
+
+    # async def ws_handler(self, request):
+    #     """Вебсокет хандлер"""
+    #     ws = web.WebSocketResponse()
+    #     i_am = uuid4().hex
+    #     user = self.users.get_user(request)
+    #     logger.info('{} Enter'.format(i_am))
+    #     self.clients[i_am] = ws
+    #     try:
+    #         await ws.prepare(request)
+    #     except Exception as e:
+    #         raise e
+    #     await ws.send_json(self.history)
+    #     async for msg in ws:
+    #         if msg.type == aiohttp.WSMsgType.TEXT:
+    #             if self.channel:
+    #                 send_msg = {
+    #                     'id': uuid4().hex,
+    #                     't': datetime.datetime.utcnow().isoformat(),
+    #                     'm': msg.data,
+    #                     'u': user
+    #                 }
+    #                 await self.pub.publish_json(self.config['redis']['channel'], send_msg)
+    #         elif msg.type == aiohttp.WSMsgType.ERROR:
+    #             logger.error('ws connection closed with exception %s' % ws.exception())
+    #     logger.info('{} Exit'.format(i_am))
+    #     del(self.clients[i_am])
+    #     return ws
 
     async def log_message(self, msg):
         """Простой логгер - если надо будет в БД будем писать в БД"""
         logger.info("msg={}".format(str(msg)))
 
     async def sub_task(self, ch):
-        logger.info("Start pubsub task")
-        while await ch.wait_message():
-            if self.in_shutdown:
-                break
-            msg = await ch.get_json()
-            await self.log_message(msg)
-            to_send = []
-            for k, v in self.clients.items():
-                to_send.append((k, v))
-            for k, v in to_send:
-                if not v.closed:
-                    self.history.append(msg)
-                    self.history = self.history[-1 * self.history_length:]
-                    await v.send_json(msg)
-                else:
-                    logger.warning("Warning {} is closed".format(k))
+        try:
+            logger.info("Start pubsub task")
+            while await ch.wait_message():
+                if self.in_shutdown:
+                    break
+                msg = await ch.get_json()
+                await self.log_message(msg)
+                to_send = []
+                for k, v in self.clients.items():
+                    to_send.append((k, v))
+                for k, v in to_send:
+                    if msg.get('t') == 'msg':
+                        self.history.append(msg)
+                        self.history = self.history[-1 * self.history_length:]
+                    await self.sio.emit('message', data=msg, room=k)
+        except Exception as e:
+            print("E", e)
+            raise e
 
 
 def main():
